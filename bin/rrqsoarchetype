@@ -1,0 +1,167 @@
+#!/usr/bin/env python
+
+import fitsio
+import numpy as np
+import argparse
+import astropy.io.fits as pyfits
+
+from desispec.interpolation import resample_flux
+from desisim.archetypes import ArcheTypes, compute_chi2
+import redrock
+from redrock._zscan import _zchi2_one
+
+
+def get_spec(plate,mjd,fiber,in_dir,lmin,lmax):
+    """ Read a SDSS spectrum
+
+    Args:
+        plate (int): PLATE of observation
+        mjd (int): MJD of observation
+        fiber (int): FIBER_ID of observation
+        in_dir (str): Path to all plate directories
+        lmin (float): Minimum observed wavelength [Angstrom]
+        lmax (float): Maximum observed wavelength [Angstrom]
+
+    Returns:
+        x (array float): Observed wavelength [Angstrom]
+        y (array float): Flux
+        e (array float): inverse variance
+
+    """
+
+    path = in_dir+str(plate)+'/spPlate-' +str(plate)+'-'+str(mjd)+'.fits'
+    h = fitsio.FITS(path)
+    flux = h[0].read()
+    ivar = h['IVAR'].read()
+    end = h['ANDMASK'].read()
+    hdr = h['WAVEDISP'].read_header()
+    h.close()
+
+    wave = hdr['CRVAL1'] + hdr['CD1_1']*np.arange(hdr['NAXIS1'])
+    if hdr['DC-FLAG']:
+        wave = 10**wave
+
+    w = (ivar[fiber-1,:]>0.) & (end[fiber-1,:]==0) & (wave>lmin) & (wave<lmax)
+    x = wave[w]
+    y = flux[fiber-1,:][w]
+    e = ivar[fiber-1,:][w]
+
+    return x, y, e
+
+
+if __name__ == '__main__':
+
+    parser = argparse.ArgumentParser(formatter_class=argparse.ArgumentDefaultsHelpFormatter,
+        description='Get QSO archetype from PCA fit to real SDSS data')
+
+    parser.add_argument('--out', type=str, default=None, required=True,
+        help = 'Output file name')
+
+    parser.add_argument('--version', type=str, default=None, required=True,
+        help = 'Version number for the archetype')
+
+    parser.add_argument('--QSO-PCA', type=str, default=None, required=True,
+        help = 'QSO PCA file')
+
+    parser.add_argument('--DRQ', type=str, default=None, required=True,
+        help = 'Catalog of quasar in DR12Q format')
+
+    parser.add_argument('--in-dir', type=str, default=None, required=True,
+        help = 'Path to SDSS data directory')
+
+    parser.add_argument('--nb', type=int, default=1000, required=False,
+        help = 'Number of spectra to generate')
+
+    parser.add_argument('--chi2-thresh', type=float, default=10**2.5, required=False,
+        help = 'Threshold for the chi2')
+
+    parser.add_argument('--seed', type=int, default=42, required=False,
+        help = 'Seed for desisim.templates')
+
+    args = parser.parse_args()
+
+    ###
+    nb_min_pixel = 1000
+    lmin = 3500.
+    lmax = 10000.
+
+    ### PCAs
+    h = pyfits.open(args.QSO_PCA)
+    hdr = h['BASIS_VECTORS'].header
+    wave = np.asarray(hdr['CRVAL1'] + hdr['CDELT1']*np.arange(hdr['NAXIS1']) )
+    if 'LOGLAM' in hdr and hdr['LOGLAM'] != 0:
+        wave = 10**wave
+    pca = np.asarray(h['BASIS_VECTORS'].data)
+    nbasis = pca.shape[0]
+    h.close()
+
+    ###
+    nTot = args.nb
+    zzcoeff = np.zeros((nTot,nbasis))
+    flux = np.zeros((nTot, wave.size))
+    subtype = np.array(['000']*nTot, dtype='S3')
+
+    ###
+    h = fitsio.FITS(args.DRQ)
+    plate = h[1]['PLATE'][:]
+    mjd = h[1]['MJD'][:]
+    fiber = h[1]['FIBERID'][:]
+    z = h[1]['Z_VI'][:]
+    balFlag = h[1]['BAL_FLAG_VI'][:]
+    h.close()
+
+    ###
+    np.random.seed(args.seed)
+    i = 0
+    for k in np.random.choice(np.arange(plate.size), size=nTot, replace=False):
+        x, y, e = get_spec(plate[k],mjd[k],fiber[k],args.in_dir,lmin,lmax)
+        if x.size<nb_min_pixel: continue
+        x /= 1.+z[k]
+        Tb = np.array([ resample_flux(x, wave, pca[j,:]) for j in range(nbasis) ]).transpose()
+        zcoeff = np.zeros(nbasis)
+        zchi2 = _zchi2_one(Tb, e, y, e*y, zcoeff)
+        zzcoeff[i,:] = zcoeff
+
+        if balFlag[k]!=0:
+            subtype[i] = 'BAL'
+        else:
+            subtype[i] = ''
+        flux[i,:] = pca.transpose().dot(zcoeff)
+        i += 1
+
+    ###
+    w = (np.arange(nTot)<i) & (np.median(flux,axis=1)>0.)
+    nTot = w.sum()
+    zzcoeff = zzcoeff[w,:]
+    flux = flux[w,:]
+    subtype = subtype[w]
+    flux /= np.median(flux,axis=1)[:,None]
+
+    ###
+    chi2, amp = compute_chi2(flux)
+    Arch = ArcheTypes(chi2)
+    iarch, resp, respindx = Arch.get_archetypes(chi2_thresh=args.chi2_thresh, responsibility=True)
+    print('Generated {} archetypes.'.format(iarch.size))
+
+    ###
+    sort = resp.argsort()[::-1]
+    resp = 1.*resp[sort]/resp.sum()
+    subtype = (subtype[iarch])[sort]
+    flux = (flux[iarch,:])[sort]
+    flux /= np.median(flux,axis=1)[:,None]
+
+    ###
+    header = [
+    {'name':'CRVAL1','value':hdr['CRVAL1'],'comment':'Rest-Frame starting wavelength [Angstroms]'},
+    {'name':'CDELT1','value':hdr['CDELT1'],'comment':'Rest-Frame wavelength step'},
+    {'name':'LOGLAM','value':(hdr['LOGLAM']!=0),'comment':'Wavelength in log lambda'},
+    {'name':'RRTYPE','value':'QSO','comment':'Spectral type'},
+    {'name':'RRVER','value':redrock.__version__,'comment':'Redrock version'},
+    {'name':'VERSION','value':args.version,'comment':'Archetype version'},
+    {'name':'SEED','value':args.seed,'comment':'Input seed'},
+    {'name':'NBINPUT','value':args.nb,'comment':'Number of generated spectra'},
+    {'name':'CHI2THRE','value':args.chi2_thresh,'comment':'Chi2 Threshold'},
+    ]
+    out = fitsio.FITS(args.out,'rw',clobber=True)
+    out.write([flux.astype('float32'),resp.astype('float32'),subtype],names=['ARCHETYPE','RESP','SUBTYPE'],extname='ARCHETYPES',header=header)
+    out.close()
