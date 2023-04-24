@@ -69,7 +69,7 @@ def generate_archetype_galaxies(nb, dw, file_out):
     ### On same grid
     i = 0
     flux = np.zeros((nTot, wave.size))
-    subtype = np.array(['00000']*nTot, dtype='S5')
+    subtype = np.array(['']*nTot, dtype='U32')
     for k in list(data.keys()):
         for j in range(data[k]['NB']):
             subtype[i] = k
@@ -99,12 +99,11 @@ def generate_archetype_galaxies(nb, dw, file_out):
     chi2, amp = compute_chi2(flux)
     Arch = ArcheTypes(chi2)
     chi2_thresh = 10**2.5
-    iarch, resp, respindx = Arch.get_archetypes(chi2_thresh=chi2_thresh, responsibility=True)
+    iarch, resp, respindx = Arch.get_archetypes(chi2_thresh=chi2_thresh)
     print('Generated {} archetypes.'.format(iarch.size))
 
     ###
     sort = resp.argsort()[::-1]
-    resp = resp[sort]/resp.sum()
     subtype = (subtype[iarch])[sort]
     flux = (flux[iarch,:])[sort]
     flux /= np.median(flux,axis=1)[:,None]
