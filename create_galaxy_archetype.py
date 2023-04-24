@@ -26,7 +26,7 @@ def read_a_few_properties(subtype, keys, inds):
     return props
     
 
-def get_galaxies(nb, dw, file_out):  
+def generate_archetype_galaxies(nb, dw, file_out):  
     
     wave = np.arange(3500./(1.+1.85), 11000.+dw/2., dw)
     
@@ -133,5 +133,5 @@ def get_galaxies(nb, dw, file_out):
     
 
 if __name__=='__main__':
-    get_galaxies(nb=1000, dw=0.5, file_out=None)
+    generate_archetype_galaxies(nb=1000, dw=0.5, file_out=None)
 
