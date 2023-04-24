@@ -99,7 +99,7 @@ def generate_archetype_galaxies(nb, dw, file_out):
     chi2, amp = compute_chi2(flux)
     Arch = ArcheTypes(chi2)
     chi2_thresh = 10**2.5
-    iarch, resp, respindx = Arch.get_archetypes(chi2_thresh=chi2_thresh)
+    iarch = Arch.get_archetypes(chi2_thresh=chi2_thresh)
     print('Generated {} archetypes.'.format(iarch.size))
 
     ###
