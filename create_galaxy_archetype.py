@@ -6,6 +6,8 @@ from desisim.archetypes import ArcheTypes, compute_chi2
 import redrock
 import fitsio
 import os
+import numba as nb
+import time
 
 template_dir = '/global/cfs/cdirs/desi/spectro/templates/basis_templates/v3.0/'
 
@@ -24,6 +26,38 @@ def read_a_few_properties(subtype, keys, inds):
         props[key] = data[key][inds]
     
     return props
+
+
+@nb.njit(fastmath=True, nopython=True)
+def new_compute_chi2_numba(flux):
+    
+    nspec, npix = flux.shape
+    chi2 = np.zeros((nspec, nspec), dtype=np.float64)
+    amp = np.zeros((nspec, nspec), dtype=np.float64)
+
+    flux = flux.copy()
+    rescale = np.sqrt(npix/np.sum(flux**2,axis=1))
+    for i in range(nspec):
+        for j in range(npix):
+            flux[i, j] *= rescale[i]
+
+    for ii in range(nspec):
+        for jj in range(nspec):
+            amp1 = 0.0
+            for kk in range(npix):
+                amp1 += flux[ii, kk]*flux[jj, kk]
+            amp1 /= npix
+            chi2[ii, jj] = npix*(1.-amp1**2)
+            amp[ii, jj] = amp1
+
+    for i in range(nspec):
+        for j in range(nspec):
+            amp[i, j] *= rescale[i]/rescale[j]
+            if i == j:
+                chi2[i, j] = 0.0
+                amp[i, j] = 1.0
+    
+    return chi2, amp
     
 
 def generate_archetype_galaxies(nb, dw, file_out):  
@@ -48,6 +82,7 @@ def generate_archetype_galaxies(nb, dw, file_out):
     data['ELG']['LOGSSFR'] = props['LOGSFR  ']-props['LOGMSTAR  ']
     data['ELG']['AV_ISM'] = props['AV_ISM  ']
     data['ELG']['LOGMSTAR'] = props['LOGMSTAR  ']
+    data['ELG']['LOGSFR'] = props['LOGSFR  ']
     
     tseed = seed+data['ELG']['NB']
     data['LRG']['FLUX'], data['LRG']['WAVE'], data['LRG']['META'], data['LRG']['OBJMETA'] = LRG().make_templates(data['LRG']['NB'],restframe=True,nocolorcuts=True,seed=tseed)
@@ -55,6 +90,7 @@ def generate_archetype_galaxies(nb, dw, file_out):
     data['LRG']['LOGSSFR'] = props['LOGSFR  ']-props['LOGMSTAR  ']
     data['LRG']['AV_ISM'] = props['AV_ISM  ']
     data['LRG']['LOGMSTAR'] = props['LOGMSTAR  ']
+    data['LRG']['LOGSFR'] = props['LOGSFR  ']
 
     tseed = seed+data['ELG']['NB']+data['LRG']['NB']
     data['BGS']['FLUX'], data['BGS']['WAVE'], data['BGS']['META'], data['BGS']['OBJMETA'] = BGS().make_templates(data['BGS']['NB'],restframe=True,nocolorcuts=True,seed=tseed)
@@ -62,6 +98,7 @@ def generate_archetype_galaxies(nb, dw, file_out):
     data['BGS']['LOGSSFR'] = props['LOGSFR  ']-props['LOGMSTAR  ']
     data['BGS']['AV_ISM'] = props['AV_ISM  ']
     data['BGS']['LOGMSTAR'] = props['LOGMSTAR  ']
+    data['BGS']['LOGSFR'] = props['LOGSFR  ']
     
     ###
     nTot = np.sum([ data[k]['NB'] for k in list(data.keys()) ])
@@ -78,9 +115,9 @@ def generate_archetype_galaxies(nb, dw, file_out):
     flux /= np.median(flux,axis=1)[:,None]
     
     properties = {'FLUX':flux, 'SUBTYPE':subtype}
-    save_keys1, save_keys2, save_keys3 = ['LOGSSFR', 'LOGMSTAR', 'AV_ISM'], ['FLUX_R', 'FLUX_G', 'FLUX_Z'], ['VDISP']
+    save_keys1, save_keys2, save_keys3 = ['LOGSFR', 'LOGSSFR', 'LOGMSTAR', 'AV_ISM'], ['FLUX_R', 'FLUX_G', 'FLUX_Z'], ['VDISP']
     
-    units = ['yr^-1', 'Msun', 'mag', 'nanomaggies', 'nanomaggies', 'nanomaggies', 'km/s']
+    units = ['Msun/yr', 'yr^-1', 'Msun', 'mag', 'nanomaggies', 'nanomaggies', 'nanomaggies', 'km/s']
     
     ii = 0
     for key in save_keys1:
@@ -95,8 +132,12 @@ def generate_archetype_galaxies(nb, dw, file_out):
         key1 = key+'(%s)'%(units[ii])
         properties[key1] = np.concatenate([data[subtype]['OBJMETA'][key] for subtype in ['ELG', 'LRG', 'BGS']])
         ii=ii+1
+    start =time.time()
     
-    chi2, amp = compute_chi2(flux)
+    #chi2, amp = compute_chi2(flux)
+    #numba is atleast twice faster than numpy
+    chi2, amp = new_compute_chi2_numba(flux)
+    chi2 = chi2.astype('float32')
     Arch = ArcheTypes(chi2)
     chi2_thresh = 10**2.5
     iarch = Arch.get_archetypes(chi2_thresh=chi2_thresh)
@@ -132,5 +173,5 @@ def generate_archetype_galaxies(nb, dw, file_out):
     
 
 if __name__=='__main__':
-    generate_archetype_galaxies(nb=1000, dw=0.5, file_out=None)
+    generate_archetype_galaxies(nb=1000, dw=0.1, file_out=None)
 
