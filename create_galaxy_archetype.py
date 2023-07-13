@@ -67,11 +67,17 @@ def generate_archetype_galaxies(nb=1000, dw=0.1, chi2_thresh=10**2.5, file_out=N
     Input:
         nb (int): number of spectra to be generated (default 1000)
         dw (float); wavelength pixel size (in Ang) (default 0.1)
-        file_out (string); filename to save the data (.fits format)
         chi2_thresh (float); chi2 square threshold that will be used for setcoverpy run (default 10**2.5)
-        maxitet (int); maximum number of iteration for SetCoverPy (default 20)
+        file_out (string); filename to save the data (.fits format)
+
+    Output:
+        Returns a fits file containing the archetype wavelengt, fluxes and galaxy properties
     """
     
+    if file_out is None:
+        print('Provide filename to save the archetypes\n')
+        return None
+
     ### Rest - frame wavelength definition
     wave = np.arange(3500./(1.+1.85), 11000.+dw/2., dw)
     
@@ -198,5 +204,5 @@ def generate_archetype_galaxies(nb=1000, dw=0.1, chi2_thresh=10**2.5, file_out=N
 if __name__=='__main__':
     
     file_out = './rrarchetype-galaxy.fits'
-    generate_archetype_galaxies(nb=1000, dw=0.1, chi2_thresh=10**2.5, file_out=file_out,)
+    generate_archetype_galaxies(file_out=file_out)
 
