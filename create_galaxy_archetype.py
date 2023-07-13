@@ -59,8 +59,40 @@ def new_compute_chi2_numba(flux):
     
     return chi2, amp
     
+    
+def get_archetypes(chi2, chi2_thresh=0.1, maxiter=40):
+    
+        """Solve the SCP problem to get the final set of archetypes and, optionally,
+        their responsibility.
+        Note: We assume that each template has uniform "cost" but a more general
+        model in principle could be used / implemented.
+        Parameters
+        ----------
+        chi2 : numpy.ndarray
+            Chi^2 matrix computed by archetypes.compute_chi2().
+        chi2_thresh : float
+            Threshold chi2 value to differentiate "different" templates.
+        
+        Returns
+        -------
+            iarch : integer numpy.array
+                Indices of the archetypes [N].
+        """
+        from SetCoverPy import setcover
 
-def generate_archetype_galaxies(nb, dw, file_out):  
+        nspec = chi2[0].shape
+        cost = np.ones(nspec) # uniform cost
+        
+        a_matrix = (chi2 <= chi2_thresh) * 1
+        gg = setcover.SetCover(a_matrix, cost, maxiters=maxiter)
+        sol, time = gg.SolveSCP()
+        
+        iarch = np.nonzero(gg.s)[0]
+        return iarch
+        
+        
+
+def generate_archetype_galaxies(nb, dw, file_out, chi2_thresh=10**2.5, maxiter=20):  
     
     wave = np.arange(3500./(1.+1.85), 11000.+dw/2., dw)
     
@@ -83,6 +115,7 @@ def generate_archetype_galaxies(nb, dw, file_out):
     data['ELG']['AV_ISM'] = props['AV_ISM  ']
     data['ELG']['LOGMSTAR'] = props['LOGMSTAR  ']
     data['ELG']['LOGSFR'] = props['LOGSFR  ']
+    data['ELG']['TEMPLATEID'] = np.array(['ELG_%d'%(tt) for tt in data['ELG']['META']['TEMPLATEID']], dtype='U32')
     
     tseed = seed+data['ELG']['NB']
     data['LRG']['FLUX'], data['LRG']['WAVE'], data['LRG']['META'], data['LRG']['OBJMETA'] = LRG().make_templates(data['LRG']['NB'],restframe=True,nocolorcuts=True,seed=tseed)
@@ -91,6 +124,7 @@ def generate_archetype_galaxies(nb, dw, file_out):
     data['LRG']['AV_ISM'] = props['AV_ISM  ']
     data['LRG']['LOGMSTAR'] = props['LOGMSTAR  ']
     data['LRG']['LOGSFR'] = props['LOGSFR  ']
+    data['LRG']['TEMPLATEID'] = np.array(['LRG_%d'%(tt) for tt in data['LRG']['META']['TEMPLATEID']], dtype='U32')
 
     tseed = seed+data['ELG']['NB']+data['LRG']['NB']
     data['BGS']['FLUX'], data['BGS']['WAVE'], data['BGS']['META'], data['BGS']['OBJMETA'] = BGS().make_templates(data['BGS']['NB'],restframe=True,nocolorcuts=True,seed=tseed)
@@ -99,6 +133,7 @@ def generate_archetype_galaxies(nb, dw, file_out):
     data['BGS']['AV_ISM'] = props['AV_ISM  ']
     data['BGS']['LOGMSTAR'] = props['LOGMSTAR  ']
     data['BGS']['LOGSFR'] = props['LOGSFR  ']
+    data['BGS']['TEMPLATEID'] = np.array(['BGS_%d'%(tt) for tt in data['BGS']['META']['TEMPLATEID']], dtype='U32')
     
     ###
     nTot = np.sum([ data[k]['NB'] for k in list(data.keys()) ])
@@ -107,14 +142,16 @@ def generate_archetype_galaxies(nb, dw, file_out):
     i = 0
     flux = np.zeros((nTot, wave.size))
     subtype = np.array(['']*nTot, dtype='U32')
+    templateid = np.array(['']*nTot, dtype='U32')
     for k in list(data.keys()):
         for j in range(data[k]['NB']):
             subtype[i] = k
+            templateid[i] = data[k]['TEMPLATEID'][j]
             flux[i] = resample_flux(wave, data[k]['WAVE'], data[k]['FLUX'][j])
             i += 1
     flux /= np.median(flux,axis=1)[:,None]
     
-    properties = {'FLUX':flux, 'SUBTYPE':subtype}
+    properties = {'FLUX':flux, 'SUBTYPE':subtype, 'TEMPLATEID':templateid}
     save_keys1, save_keys2, save_keys3 = ['LOGSFR', 'LOGSSFR', 'LOGMSTAR', 'AV_ISM'], ['FLUX_R', 'FLUX_G', 'FLUX_Z'], ['VDISP']
     
     units = ['Msun/yr', 'yr^-1', 'Msun', 'mag', 'nanomaggies', 'nanomaggies', 'nanomaggies', 'km/s']
@@ -132,6 +169,7 @@ def generate_archetype_galaxies(nb, dw, file_out):
         key1 = key+'(%s)'%(units[ii])
         properties[key1] = np.concatenate([data[subtype]['OBJMETA'][key] for subtype in ['ELG', 'LRG', 'BGS']])
         ii=ii+1
+    
     start =time.time()
     
     #chi2, amp = compute_chi2(flux)
@@ -139,14 +177,10 @@ def generate_archetype_galaxies(nb, dw, file_out):
     chi2, amp = new_compute_chi2_numba(flux)
     chi2 = chi2.astype('float32')
     Arch = ArcheTypes(chi2)
-    chi2_thresh = 10**2.5
     iarch = Arch.get_archetypes(chi2_thresh=chi2_thresh)
     print('Generated {} archetypes.'.format(iarch.size))
 
     ###
-    sort = resp.argsort()[::-1]
-    subtype = (subtype[iarch])[sort]
-    flux = (flux[iarch,:])[sort]
     flux /= np.median(flux,axis=1)[:,None]
 
     ###
@@ -165,13 +199,16 @@ def generate_archetype_galaxies(nb, dw, file_out):
     out = fitsio.FITS(file_out,'rw',clobber=True)
     
     final_keys = list(properties.keys())
-    props = [properties[key][iarch] for key in final_keys[2:]]
-    out.write([properties['FLUX'][iarch], properties['SUBTYPE'][iarch]],names=['ARCHETYPE','SUBTYPE'],extname='ARCHETYPES', header=header)
-    out.write(props,names=final_keys[2:],extname='PROPERTIES')
+    props = [properties[key][iarch] for key in final_keys[3:]]
+    
+    out.write([properties['FLUX'][iarch], properties['SUBTYPE'][iarch], properties['TEMPLATEID'][iarch]],names=['ARCHETYPE','SUBTYPE', 'TEMPLATEID'],extname='ARCHETYPES', header=header)
+    out.write(props,names=final_keys[3:],extname='PROPERTIES')
     out.close()
     
     
 
 if __name__=='__main__':
-    generate_archetype_galaxies(nb=1000, dw=0.1, file_out=None)
+    
+    file_out = './rrarchetype-galaxy.fits'
+    generate_archetype_galaxies(nb=1000, dw=0.1, file_out=file_out, chi2_thresh=10**2.5, maxiter=None)
 
