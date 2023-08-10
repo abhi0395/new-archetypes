@@ -61,7 +61,7 @@ def new_compute_chi2_numba(flux):
     
     return chi2, amp
         
-def generate_archetype_galaxies(nb=1000, dw=0.1, chi2_thresh=10**2.5, file_out=None):  
+def generate_archetype_galaxies(nb=100, dw=0.1, chi2_thresh=10**2.5, file_out=None):  
 
     """ Generate synthetic spectra and run SetCoverPy to construct a set of archetypes 
     Input:
@@ -88,47 +88,30 @@ def generate_archetype_galaxies(nb=1000, dw=0.1, chi2_thresh=10**2.5, file_out=N
     prop_keys = ['LOGMSTAR  ', 'LOGSFR  ', 'AV_ISM  ']
 
     ### Galaxy types
+    all_subtypes = ['ELG', 'LRG', 'BGS']
     subtype1, subtype2, subtype3 = 'ELG', 'LRG', 'BGS'
 
-    data[subtype1] = {}
-    data[subtype2] = {}
-    data[subtype3] = {}
+    for subtype in all_subtypes:
+        data[subtype] = {}
+        data[subtype]['NB'] = int(1./3.*nb)
+    data['BGS']['NB'] = nb-data['ELG']['NB']-data['LRG']['NB']
+    data['ELG']['SEED'] = seed
+    data['LRG']['SEED'] = seed+data['ELG']['NB']
+    data['BGS']['SEED'] = seed+data['ELG']['NB']+data['LRG']['NB']
 
-    data[subtype1]['NB'] = int(1./3.*nb)
-    data[subtype2]['NB'] = int(1./3.*nb)
-    data[subtype3]['NB'] = nb-data[subtype1]['NB']-data[subtype2]['NB']
-
+   
     ### Generating synthetic spectra
 
-    ### For ELGs
-    tseed = seed
-    data[subtype1]['FLUX'], data[subtype1]['WAVE'], data[subtype1]['META'], data[subtype1]['OBJMETA'] = ELG().make_templates(data[subtype1]['NB'],restframe=True,nocolorcuts=True,seed=tseed)
-    props = read_a_few_properties(subtype1.lower(), keys=prop_keys, inds =  data[subtype1]['META']['TEMPLATEID'])
-    data[subtype1]['LOGSSFR'] = props['LOGSFR  ']-props['LOGMSTAR  ']
-    data[subtype1]['AV_ISM'] = props['AV_ISM  ']
-    data[subtype1]['LOGMSTAR'] = props['LOGMSTAR  ']
-    data[subtype1]['LOGSFR'] = props['LOGSFR  ']
-    data[subtype1]['TEMPLATEID'] = np.array(['%s_%d'%(subtype1, tt) for tt in data[subtype1]['META']['TEMPLATEID']], dtype='U32')
-    
-    ### For LRGs
-    tseed = seed+data[subtype1]['NB']
-    data[subtype2]['FLUX'], data[subtype2]['WAVE'], data[subtype2]['META'], data[subtype2]['OBJMETA'] = LRG().make_templates(data[subtype2]['NB'],restframe=True,nocolorcuts=True,seed=tseed)
-    props = read_a_few_properties(subtype2.lower(), keys=prop_keys, inds =  data[subtype2]['META']['TEMPLATEID'])
-    data[subtype2]['LOGSSFR'] = props['LOGSFR  ']-props['LOGMSTAR  ']
-    data[subtype2]['AV_ISM'] = props['AV_ISM  ']
-    data[subtype2]['LOGMSTAR'] = props['LOGMSTAR  ']
-    data[subtype2]['LOGSFR'] = props['LOGSFR  ']
-    data[subtype2]['TEMPLATEID'] = np.array(['%s_%d'%(subtype2, tt) for tt in data[subtype2]['META']['TEMPLATEID']], dtype='U32')
+    all_func = {'ELG':ELG(), 'LRG':LRG(), 'BGS':BGS()}
 
-    ### For BGS
-    tseed = seed+data[subtype1]['NB']+data[subtype2]['NB']
-    data[subtype3]['FLUX'], data[subtype3]['WAVE'], data[subtype3]['META'], data[subtype3]['OBJMETA'] = BGS().make_templates(data[subtype3]['NB'],restframe=True,nocolorcuts=True,seed=tseed)
-    props = read_a_few_properties(subtype3.lower(), keys=prop_keys, inds =  data[subtype3]['META']['TEMPLATEID'])
-    data[subtype3]['LOGSSFR'] = props['LOGSFR  ']-props['LOGMSTAR  ']
-    data[subtype3]['AV_ISM'] = props['AV_ISM  ']
-    data[subtype3]['LOGMSTAR'] = props['LOGMSTAR  ']
-    data[subtype3]['LOGSFR'] = props['LOGSFR  ']
-    data[subtype3]['TEMPLATEID'] = np.array(['%s_%d'%(subtype3, tt) for tt in data[subtype3]['META']['TEMPLATEID']], dtype='U32')
+    for subtype in all_subtypes:
+        data[subtype]['FLUX'], data[subtype]['WAVE'], data[subtype]['META'], data[subtype]['OBJMETA'] = all_func[subtype].make_templates(data[subtype]['NB'],restframe=True,nocolorcuts=True,seed=data[subtype]['SEED'])
+        props = read_a_few_properties(subtype.lower(), keys=prop_keys, inds =  data[subtype]['META']['TEMPLATEID'])
+        data[subtype]['LOGSSFR'] = props['LOGSFR  ']-props['LOGMSTAR  ']
+        data[subtype]['AV_ISM'] = props['AV_ISM  ']
+        data[subtype]['LOGMSTAR'] = props['LOGMSTAR  ']
+        data[subtype]['LOGSFR'] = props['LOGSFR  ']
+        data[subtype]['TEMPLATEID'] = np.array(['%s_%d'%(subtype, tt) for tt in data[subtype]['META']['TEMPLATEID']], dtype='U32')
     
     ### Combining all galaxies
     nTot = np.sum([ data[k]['NB'] for k in list(data.keys()) ])
@@ -203,6 +186,7 @@ def generate_archetype_galaxies(nb=1000, dw=0.1, chi2_thresh=10**2.5, file_out=N
 
 if __name__=='__main__':
     
-    file_out = './rrarchetype-galaxy.fits'
+    file_out = './test_rrarchetype-galaxy.fits'
     generate_archetype_galaxies(file_out=file_out)
+
 
