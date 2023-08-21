@@ -64,13 +64,16 @@ def new_compute_chi2_numba(flux):
 def generate_archetype_galaxies(nb=100, dw=0.1, chi2_thresh=10**2.5, file_out=None):  
 
     """ Generate synthetic spectra and run SetCoverPy to construct a set of archetypes 
-    Input:
+    
+    Parameters:
+    ------------------------
         nb (int): number of spectra to be generated (default 1000)
         dw (float); wavelength pixel size (in Ang) (default 0.1)
         chi2_thresh (float); chi2 square threshold that will be used for setcoverpy run (default 10**2.5)
         file_out (string); filename to save the data (.fits format)
 
     Output:
+    ------------------------
         Returns a fits file containing the archetype wavelengt, fluxes and galaxy properties
     """
     
@@ -89,7 +92,6 @@ def generate_archetype_galaxies(nb=100, dw=0.1, chi2_thresh=10**2.5, file_out=No
 
     ### Galaxy types
     all_subtypes = ['ELG', 'LRG', 'BGS']
-    subtype1, subtype2, subtype3 = 'ELG', 'LRG', 'BGS'
 
     for subtype in all_subtypes:
         data[subtype] = {}
@@ -137,15 +139,15 @@ def generate_archetype_galaxies(nb=100, dw=0.1, chi2_thresh=10**2.5, file_out=No
     ii = 0
     for key in save_keys1:
         key1 = key+'(%s)'%(units[ii])
-        properties[key1] = np.concatenate([data[subtype][key] for subtype in ['ELG', 'LRG', 'BGS']])
+        properties[key1] = np.concatenate([data[subtype][key] for subtype in all_subtypes])
         ii=ii+1
     for key in save_keys2:
         key1 = key+'(%s)'%(units[ii])
-        properties[key1] = np.concatenate([data[subtype]['META'][key] for subtype in ['ELG', 'LRG', 'BGS']])
+        properties[key1] = np.concatenate([data[subtype]['META'][key] for subtype in all_subtypes])
         ii=ii+1
     for key in save_keys3:
         key1 = key+'(%s)'%(units[ii])
-        properties[key1] = np.concatenate([data[subtype]['OBJMETA'][key] for subtype in ['ELG', 'LRG', 'BGS']])
+        properties[key1] = np.concatenate([data[subtype]['OBJMETA'][key] for subtype in all_subtypes])
         ii=ii+1
     
     start =time.time()
@@ -186,7 +188,7 @@ def generate_archetype_galaxies(nb=100, dw=0.1, chi2_thresh=10**2.5, file_out=No
 
 if __name__=='__main__':
     
-    file_out = './test_rrarchetype-galaxy.fits'
+    file_out = './rrarchetype-galaxy.fits'
     generate_archetype_galaxies(file_out=file_out)
 
 
