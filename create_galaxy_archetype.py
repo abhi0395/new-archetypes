@@ -172,7 +172,7 @@ def generate_archetype_galaxies(nb=100, dw=0.1, chi2_thresh=10**2.5, file_out=No
     {'name':'RRTYPE','value':'GALAXY','comment':'Spectral type'},
     {'name':'INSPEC','value':os.environ['DESI_BASIS_TEMPLATES'],'comment':'Vector basis'},
     {'name':'RRVER','value':redrock.__version__,'comment':'Redrock version'},
-    {'name':'VERSION','value':'3.3','comment':'Archetype version'},
+    {'name':'VERSION','value':'new_v1.1','comment':'Archetype version'},
     {'name':'SEED','value':seed,'comment':'Input seed'},
     {'name':'NBINPUT','value':nb,'comment':'Number of generated spectra'},
     {'name':'CHI2THRE','value':chi2_thresh,'comment':'Chi2 Threshold'},
