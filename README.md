@@ -13,10 +13,8 @@ Depending on whether you have LFS installed, please follow the appropriate instr
 
 ### If you have Git LFS installed
 ```bash
-# First install git-lfs if you haven't
-git lfs install
 
-# Then clone the repo as usual
+# Just clone the repo as usual
 git clone https://github.com/abhi0395/new-archetypes.git
 cd new-archetypes
 ```
